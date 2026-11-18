@@ -1,0 +1,14 @@
+.dart_tool/
+build/
+.flutter-plugins*
+*.iml
+.idea/
+
+# Solo código y README: sin documentos
+docs/
+*.pdf
+*.md
+!/README.md
+
+# Temporales de Kotlin/Gradle
+.kotlin/
