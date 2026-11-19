@@ -20,13 +20,25 @@ class GameBadge {
 
 class DailyChallenge {
   final String title;
+
+  /// Tipo del reto: minutes, photo, location o notes.
+  final String type;
+  final int target;
   final int bonusXp;
   final bool completed;
 
-  const DailyChallenge({required this.title, required this.bonusXp, required this.completed});
+  const DailyChallenge({
+    required this.title,
+    required this.type,
+    required this.target,
+    required this.bonusXp,
+    required this.completed,
+  });
 
   factory DailyChallenge.fromJson(Map<String, dynamic> j) => DailyChallenge(
         title: j['title'] as String,
+        type: j['type'] as String? ?? 'minutes',
+        target: (j['target'] as num?)?.toInt() ?? 1,
         bonusXp: (j['bonusXp'] as num).toInt(),
         completed: j['completed'] as bool? ?? false,
       );
@@ -43,6 +55,8 @@ class Profile {
   final int streak;
   final int walks;
   final int minutes;
+  final int photos;
+  final int locations;
   final List<GameBadge> badges;
   final DailyChallenge challenge;
 
@@ -57,6 +71,8 @@ class Profile {
     required this.streak,
     required this.walks,
     required this.minutes,
+    required this.photos,
+    required this.locations,
     required this.badges,
     required this.challenge,
   });
@@ -74,6 +90,8 @@ class Profile {
         streak: (j['streak'] as num).toInt(),
         walks: (j['walks'] as num).toInt(),
         minutes: (j['minutes'] as num).toInt(),
+        photos: (j['photos'] as num?)?.toInt() ?? 0,
+        locations: (j['locations'] as num?)?.toInt() ?? 0,
         badges: (j['badges'] as List).map((b) => GameBadge.fromJson(b as Map<String, dynamic>)).toList(),
         challenge: DailyChallenge.fromJson(j['challenge'] as Map<String, dynamic>),
       );

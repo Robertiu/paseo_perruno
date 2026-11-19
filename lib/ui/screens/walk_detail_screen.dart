@@ -1,17 +1,18 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../app_services.dart';
 import '../../core/exceptions.dart';
 import '../../core/routes.dart';
 import '../../domain/models/walk_entry.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_shell.dart';
+import '../widgets/common.dart';
 import '../widgets/walk_image.dart';
-import '../trail_theme.dart';
 
-/// Detalle del paseo: foto (Hero), notas y mapa interactivo con botón
-/// para abrir Google Maps.
+/// Detalle del paseo: foto (Hero), notas, mapa y acciones de editar / eliminar.
 class WalkDetailScreen extends StatelessWidget {
   final WalkEntry entry;
 
@@ -20,36 +21,27 @@ class WalkDetailScreen extends StatelessWidget {
   Future<void> _delete(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-    final repo = AppServices.of(context).walks;
+    final services = AppServices.of(context);
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Eliminar paseo'),
-        content: Text('¿Eliminar el paseo de ${entry.dogName}?'),
+      builder: (ctx) => AlertDialog(
+        title: Text('Eliminar paseo', style: Tk.display(20)),
+        content: Text('¿Eliminar el paseo de ${entry.dogName}? También se restará su XP.', style: Tk.body(14, height: 1.4)),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Eliminar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar')),
         ],
       ),
     );
     if (confirm != true) return;
 
     try {
-      await repo.delete(entry.id!);
+      await services.walks.delete(entry.id!);
+      services.refreshProfile();
       navigator.pop(true);
     } catch (e) {
-      if (e is AuthException && context.mounted) {
-        navigator.pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
-        return;
-      }
-      messenger.showSnackBar(SnackBar(
-        content: Text(e is AppException ? e.message : 'No se pudo eliminar.'),
-      ));
+      messenger.showSnackBar(SnackBar(content: Text(e is AppException ? e.message : 'No se pudo eliminar.')));
     }
   }
 
@@ -62,70 +54,81 @@ class WalkDetailScreen extends StatelessWidget {
   Future<void> _openMaps(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await AppServices.of(context)
-          .location
-          .openInMaps(entry.latitude!, entry.longitude!);
+      await AppServices.of(context).location.openInMaps(entry.latitude!, entry.longitude!);
     } catch (e) {
-      messenger.showSnackBar(SnackBar(
-        content: Text(
-            e is AppException ? e.message : 'No se pudo abrir Google Maps.'),
-      ));
+      messenger.showSnackBar(SnackBar(content: Text(e is AppException ? e.message : 'No se pudo abrir Google Maps.')));
     }
   }
 
+  Widget _chip(IconData icon, String text, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(color: Tk.card, borderRadius: BorderRadius.circular(10)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 6),
+          Text(text, style: Tk.body(12, w: FontWeight.w600, color: Tk.ink)),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
-    final date =
-        DateFormat("EEEE d 'de' MMMM y, HH:mm", 'es').format(entry.createdAt);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(entry.dogName),
-        actions: [
-          IconButton(
-            tooltip: 'Editar',
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => _edit(context),
-          ),
-          IconButton(
-            tooltip: 'Eliminar',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () => _delete(context),
-          ),
-        ],
-      ),
+    final date = DateFormat("EEEE d 'de' MMMM y, HH:mm", 'es').format(entry.createdAt);
+    return AppShell(
+      title: entry.dogName,
+      back: true,
       body: ListView(
+        padding: const EdgeInsets.fromLTRB(Tk.pad, 20, Tk.pad, 32),
         children: [
-          WalkImage(entry: entry, height: 260, width: double.infinity),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(date, style: Theme.of(context).textTheme.labelLarge),
-                const SizedBox(height: 4),
-                Text(
-                    '${entry.durationMinutes} minutos de paseo · +${entry.xp} XP'),
-                const SizedBox(height: 16),
-                const Text('Notas del paseo'),
-                const Divider(),
-                Text(entry.notes.isEmpty ? 'Sin notas.' : entry.notes),
-                const SizedBox(height: 24),
-                if (entry.hasLocation) ...[
-                  Text('Ubicación',
-                      style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 8),
-                  _WalkMap(entry: entry),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () => _openMaps(context),
-                    icon: const Icon(Icons.map),
-                    label: const Text('Abrir en Google Maps'),
-                  ),
-                ] else
-                  const Text('Este paseo no tiene ubicación guardada.'),
-              ],
+          PageTitle(entry.dogName),
+          if (entry.hasImage) ...[
+            WalkImage(entry: entry, height: 240, width: double.infinity),
+            const SizedBox(height: 16),
+          ],
+          Text(date, style: Tk.body(12, w: FontWeight.w600, color: Tk.rust)),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            _chip(Icons.schedule, '${entry.durationMinutes} min', Tk.blue),
+            _chip(Icons.bolt, '+${entry.xp} XP', Tk.rust),
+            if (entry.hasLocation) _chip(Icons.near_me_outlined, 'GPS', Tk.green),
+          ]),
+          const Rule(gap: 20),
+          Text('Notas del sendero', style: Tk.body(14, w: FontWeight.w700, color: Tk.ink)),
+          const SizedBox(height: 8),
+          Text(entry.notes.isEmpty ? 'Sin notas.' : '“${entry.notes}”', style: Tk.body(14, height: 1.5)),
+          const Rule(gap: 20),
+          if (entry.hasLocation) ...[
+            _WalkMap(entry: entry),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _openMaps(context),
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('Abrir en Google Maps'),
             ),
-          ),
+          ] else
+            Row(children: [
+              const Icon(Icons.location_off_outlined, size: 18, color: Tk.inkSoft),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Este paseo no tiene ubicación guardada.', style: Tk.body(13))),
+            ]),
+          const Rule(gap: 20),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _edit(context),
+                style: OutlinedButton.styleFrom(foregroundColor: Tk.green),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('Editar'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _delete(context),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Eliminar'),
+              ),
+            ),
+          ]),
         ],
       ),
     );
@@ -134,31 +137,21 @@ class WalkDetailScreen extends StatelessWidget {
 
 class _WalkMap extends StatelessWidget {
   final WalkEntry entry;
-
   const _WalkMap({required this.entry});
 
   @override
   Widget build(BuildContext context) {
     final point = LatLng(entry.latitude!, entry.longitude!);
     return ClipRRect(
-      borderRadius: trailCut,
+      borderRadius: BorderRadius.circular(Tk.radius),
       child: SizedBox(
         height: 220,
         child: FlutterMap(
           options: MapOptions(initialCenter: point, initialZoom: 16),
           children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.example.paseo_perruno',
-            ),
+            TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.example.paseo_perruno'),
             MarkerLayer(markers: [
-              Marker(
-                point: point,
-                width: 40,
-                height: 40,
-                child:
-                    const Icon(Icons.location_on, color: Colors.red, size: 40),
-              ),
+              Marker(point: point, width: 40, height: 40, child: const Icon(Icons.location_on, color: Tk.rust, size: 40)),
             ]),
           ],
         ),

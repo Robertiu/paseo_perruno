@@ -12,7 +12,7 @@ import 'ui/screens/splash_screen.dart';
 import 'ui/screens/walk_detail_screen.dart';
 import 'ui/screens/walk_form_screen.dart';
 import 'ui/screens/walk_list_screen.dart';
-import 'ui/trail_theme.dart';
+import 'ui/theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,8 +28,7 @@ class PaseoPerrunoApp extends StatelessWidget {
     return MaterialApp(
       title: 'Paseo Perruno',
       debugShowCheckedModeBanner: false,
-      theme: trailTheme(Brightness.light),
-      darkTheme: trailTheme(Brightness.dark),
+      theme: appTheme(),
       initialRoute: AppRoutes.splash,
       onGenerateRoute: _onGenerateRoute,
     );
@@ -44,15 +43,17 @@ class PaseoPerrunoApp extends StatelessWidget {
       case AppRoutes.login:
         return MaterialPageRoute(builder: (_) => const LoginScreen(), settings: settings);
       case AppRoutes.list:
-        return MaterialPageRoute(builder: (_) => const WalkListScreen(), settings: settings);
+        return _fade(settings, const WalkListScreen());
       case AppRoutes.profile:
         return MaterialPageRoute(builder: (_) => const ProfileScreen(), settings: settings);
       case AppRoutes.ranking:
-        return MaterialPageRoute(builder: (_) => const RankingScreen(), settings: settings);
+        return _fade(settings, const RankingScreen());
       case AppRoutes.form:
         // Con un WalkEntry como argumento el formulario entra en modo edición.
-        return MaterialPageRoute(
-            builder: (_) => WalkFormScreen(existing: settings.arguments as WalkEntry?), settings: settings);
+        final existing = settings.arguments as WalkEntry?;
+        return existing == null
+            ? _fade(settings, const WalkFormScreen())
+            : MaterialPageRoute(builder: (_) => WalkFormScreen(existing: existing), settings: settings);
       case AppRoutes.about:
         return MaterialPageRoute(builder: (_) => const AboutScreen(), settings: settings);
       case AppRoutes.detail:
@@ -67,4 +68,12 @@ class PaseoPerrunoApp extends StatelessWidget {
     }
     return null;
   }
+
+  /// Cambio entre pestañas: fundido corto, sin deslizar.
+  PageRouteBuilder<dynamic> _fade(RouteSettings settings, Widget page) => PageRouteBuilder(
+        settings: settings,
+        transitionDuration: const Duration(milliseconds: 160),
+        pageBuilder: (_, __, ___) => page,
+        transitionsBuilder: (_, animation, __, child) => FadeTransition(opacity: animation, child: child),
+      );
 }

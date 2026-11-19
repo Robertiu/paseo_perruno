@@ -5,13 +5,15 @@ import 'package:material_ui/material_ui.dart';
 import '../../app_services.dart';
 import '../../core/exceptions.dart';
 import '../../core/routes.dart';
-import '../trail_theme.dart';
 import '../../domain/models/walk_entry.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_shell.dart';
+import '../widgets/common.dart';
 import '../widgets/reward_dialog.dart';
 
-/// Formulario de nuevo paseo: foto (cámara/galería), dictado y GPS al guardar.
+/// Nuevo paseo (pestaña) o edición de un paseo existente (pantalla secundaria).
 class WalkFormScreen extends StatefulWidget {
-  /// Si no es nulo, el formulario edita ese paseo (nombre, duración y notas).
+  /// Si no es nulo, edita ese paseo (nombre, duración y notas).
   final WalkEntry? existing;
 
   const WalkFormScreen({super.key, this.existing});
@@ -21,43 +23,73 @@ class WalkFormScreen extends StatefulWidget {
 }
 
 class _WalkFormScreenState extends State<WalkFormScreen> {
+  static const _maxNotes = 300;
+
   final _formKey = GlobalKey<FormState>();
   late final _dogCtrl = TextEditingController(text: widget.existing?.dogName);
   late final _notesCtrl = TextEditingController(text: widget.existing?.notes);
-  late final _durationCtrl =
-      TextEditingController(text: '${widget.existing?.durationMinutes ?? 30}');
-
-  bool get _editing => widget.existing != null;
+  late int _minutes = (widget.existing?.durationMinutes ?? 30).clamp(5, 240);
 
   String? _imagePath;
   bool _listening = false;
   bool _saving = false;
-
-  /// Texto que ya había antes de empezar a dictar, para anexar sin borrarlo.
+  List<String> _recentDogs = const [];
   String _notesBeforeDictation = '';
+
+  bool get _editing => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _notesCtrl.addListener(() => setState(() {}));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_editing && _recentDogs.isEmpty) _loadRecentDogs();
+  }
+
+  Future<void> _loadRecentDogs() async {
+    try {
+      final walks = await AppServices.of(context).walks.getAll();
+      final names = <String>[];
+      for (final w in walks) {
+        if (!names.contains(w.dogName)) names.add(w.dogName);
+      }
+      if (mounted) setState(() => _recentDogs = names.take(4).toList());
+    } catch (_) {
+      // Las sugerencias son opcionales.
+    }
+  }
 
   @override
   void dispose() {
     _dogCtrl.dispose();
     _notesCtrl.dispose();
-    _durationCtrl.dispose();
     super.dispose();
   }
 
   void _showError(Object e) {
-    if (e is AuthException) {
-      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.login, (_) => false);
-      return;
-    }
     final msg = e is AppException ? e.message : 'Ocurrió un error inesperado.';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// Misma fórmula que el servidor (aprox.: la racha final la decide la API).
+  int get _estimatedXp {
+    final streak = AppServices.of(context).profile.value?.streak ?? 0;
+    return 10 +
+        (_minutes > 120 ? 120 : _minutes) +
+        (_notesCtrl.text.trim().isNotEmpty ? 5 : 0) +
+        (_imagePath != null ? 5 : 0) +
+        5 +
+        2 * (streak < 1 ? 1 : (streak > 10 ? 10 : streak));
   }
 
   Future<void> _pickImage(bool camera) async {
     final media = AppServices.of(context).media;
     try {
-      final path =
-          camera ? await media.takePhoto() : await media.pickFromGallery();
+      final path = camera ? await media.takePhoto() : await media.pickFromGallery();
       if (path != null && mounted) setState(() => _imagePath = path);
     } catch (e) {
       if (mounted) _showError(e);
@@ -78,16 +110,13 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
         onText: (text, isFinal) {
           if (!mounted) return;
           setState(() {
-            _notesCtrl.text = [_notesBeforeDictation, text]
-                .where((s) => s.isNotEmpty)
-                .join(' ');
+            final joined = [_notesBeforeDictation, text].where((s) => s.isNotEmpty).join(' ');
+            _notesCtrl.text = joined.length > _maxNotes ? joined.substring(0, _maxNotes) : joined;
             if (isFinal) _listening = false;
           });
         },
         onStatus: (status) {
-          if (mounted && (status == 'done' || status == 'notListening')) {
-            setState(() => _listening = false);
-          }
+          if (mounted && (status == 'done' || status == 'notListening')) setState(() => _listening = false);
         },
       );
     } catch (e) {
@@ -100,28 +129,21 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    FocusScope.of(context).unfocus();
     final services = AppServices.of(context);
+    final navigator = Navigator.of(context);
     setState(() => _saving = true);
 
-    if (_editing) {
-      try {
+    try {
+      if (_editing) {
         await services.walks.update(widget.existing!.copyWith(
           dogName: _dogCtrl.text.trim(),
           notes: _notesCtrl.text.trim(),
-          durationMinutes: int.parse(_durationCtrl.text),
+          durationMinutes: _minutes,
         ));
-        if (mounted) Navigator.pop(context, true);
-      } catch (e) {
-        if (mounted) {
-          setState(() => _saving = false);
-          _showError(e);
-        }
+        if (mounted) navigator.pop(true);
+        return;
       }
-      return;
-    }
 
-    try {
       // La ubicación es opcional: si falla, el paseo se guarda sin coordenadas.
       double? lat, lng;
       try {
@@ -135,15 +157,16 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
       final saved = await services.walks.insert(WalkEntry(
         dogName: _dogCtrl.text.trim(),
         notes: _notesCtrl.text.trim(),
-        durationMinutes: int.parse(_durationCtrl.text),
+        durationMinutes: _minutes,
         createdAt: DateTime.now(),
         imagePath: _imagePath,
         latitude: lat,
         longitude: lng,
       ));
+      services.refreshProfile();
       if (!mounted) return;
       await showRewardDialog(context, saved.reward);
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) navigator.pushReplacementNamed(AppRoutes.list);
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
@@ -154,93 +177,113 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(_editing ? 'Editar paseo' : 'Nuevo paseo')),
+    final title = _editing ? 'Editar paseo' : 'Nuevo paseo';
+    return AppShell(
+      title: title,
+      tab: _editing ? null : AppTab.form,
+      back: _editing,
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(Tk.pad, 20, Tk.pad, 24),
           children: [
+            PageTitle(title),
             if (!_editing) ...[
-              _PhotoPicker(
-                imagePath: _imagePath,
-                onCamera: () => _pickImage(true),
-                onGallery: () => _pickImage(false),
-              ),
-              const SizedBox(height: 16),
+              _PhotoBox(path: _imagePath, onCamera: () => _pickImage(true), onGallery: () => _pickImage(false)),
+              const Rule(),
             ],
+            Text('Compañero de ruta', style: Tk.body(14, w: FontWeight.w700, color: Tk.ink)),
+            const SizedBox(height: 10),
             TextFormField(
               controller: _dogCtrl,
               textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Nombre del perro',
-                prefixIcon: Icon(Icons.pets),
-              ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Escribe el nombre' : null,
+              style: Tk.display(16),
+              decoration: const InputDecoration(hintText: 'Nombre del perro', prefixIcon: Icon(Icons.pets, color: Tk.rust)),
+              validator: (v) => (v == null || v.trim().isEmpty) ? 'Escribe el nombre' : null,
             ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _durationCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Duración (minutos)',
-                prefixIcon: Icon(Icons.timer_outlined),
-              ),
-              validator: (v) {
-                final n = int.tryParse(v ?? '');
-                return (n == null || n <= 0) ? 'Ingresa minutos válidos' : null;
-              },
+            if (_recentDogs.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, children: [
+                for (final name in _recentDogs)
+                  ActionChip(
+                    label: Text(name, style: Tk.body(12, w: FontWeight.w600, color: Tk.green)),
+                    backgroundColor: Tk.card,
+                    side: BorderSide.none,
+                    onPressed: () => setState(() => _dogCtrl.text = name),
+                  ),
+              ]),
+            ],
+            const Rule(gap: 20),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text('Duración de la caminata', style: Tk.body(14, w: FontWeight.w700, color: Tk.ink)),
+              Text.rich(TextSpan(children: [
+                TextSpan(text: '$_minutes', style: Tk.display(32, color: Tk.rust)),
+                TextSpan(text: ' min', style: Tk.body(14)),
+              ])),
+            ]),
+            Slider(
+              value: _minutes.toDouble(),
+              min: 5,
+              max: 240,
+              divisions: 47,
+              onChanged: (v) => setState(() => _minutes = v.round()),
             ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _notesCtrl,
-              maxLines: 5,
-              decoration: InputDecoration(
-                labelText: 'Notas del paseo',
-                alignLabelWithHint: true,
-                suffixIcon: IconButton(
-                  tooltip: _listening ? 'Detener dictado' : 'Dictar',
-                  color: _listening ? Colors.red : null,
-                  icon: Icon(_listening ? Icons.mic : Icons.mic_none),
-                  onPressed: _toggleDictation,
+            Row(children: [
+              for (final add in const [5, 15, 30]) ...[
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _minutes = (_minutes + add).clamp(5, 240)),
+                    borderRadius: BorderRadius.circular(Tk.radius),
+                    child: Container(
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(color: Tk.card, borderRadius: BorderRadius.circular(Tk.radius)),
+                      child: Text('+$add min', style: Tk.body(12, w: FontWeight.w600, color: Tk.ink)),
+                    ),
+                  ),
+                ),
+                if (add != 30) const SizedBox(width: 10),
+              ],
+            ]),
+            const Rule(gap: 20),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('Notas del sendero', style: Tk.body(14, w: FontWeight.w700, color: Tk.ink)),
+              InkWell(
+                onTap: _toggleDictation,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(color: _listening ? Tk.blush : Tk.card, borderRadius: BorderRadius.circular(8)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(_listening ? Icons.mic : Icons.mic_none, size: 16, color: Tk.rust),
+                    const SizedBox(width: 4),
+                    Text(_listening ? 'Escuchando…' : 'Dictar', style: Tk.body(12, w: FontWeight.w600, color: Tk.rust)),
+                  ]),
                 ),
               ),
+            ]),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _notesCtrl,
+              maxLines: 5,
+              maxLength: _maxNotes,
+              style: Tk.body(14, color: Tk.ink),
+              decoration: const InputDecoration(hintText: '¿Qué lugares exploraron? ¿Cómo estuvo su energía?'),
             ),
             if (!_editing) ...[
-              const SizedBox(height: 18),
-              ListenableBuilder(
-                listenable: Listenable.merge([_durationCtrl, _notesCtrl]),
-                builder: (context, _) {
-                  final minutes = int.tryParse(_durationCtrl.text);
-                  if (minutes == null || minutes < 1) {
-                    return const SizedBox.shrink();
-                  }
-                  final xp = 10 +
-                      minutes.clamp(1, 120) +
-                      (_imagePath == null ? 0 : 5) +
-                      (_notesCtrl.text.trim().isEmpty ? 0 : 5);
-                  return Text(
-                      '+$xp XP base. GPS, racha y reto pueden sumar más.',
-                      style: Theme.of(context).textTheme.bodyMedium);
-                },
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                  'Al guardar, se intenta añadir tu ubicación. Es opcional.'),
+              const Rule(gap: 12),
+              _XpEstimate(xp: _estimatedXp, streak: AppServices.of(context).profile.value?.streak ?? 0),
+              const Rule(gap: 12),
+              const _GpsNote(),
             ],
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: _saving ? null : _save,
+              style: FilledButton.styleFrom(backgroundColor: Tk.rust),
               icon: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.save),
-              label: Text(_saving
-                  ? 'Guardando…'
-                  : (_editing ? 'Guardar cambios' : 'Guardar paseo')),
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.bookmark_added_outlined),
+              label: Text(_saving ? 'Guardando…' : (_editing ? 'Guardar cambios' : 'Guardar en la bitácora')),
             ),
           ],
         ),
@@ -249,51 +292,114 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
   }
 }
 
-class _PhotoPicker extends StatelessWidget {
-  final String? imagePath;
+class _PhotoBox extends StatelessWidget {
+  final String? path;
   final VoidCallback onCamera;
   final VoidCallback onGallery;
+  const _PhotoBox({required this.path, required this.onCamera, required this.onGallery});
 
-  const _PhotoPicker({
-    required this.imagePath,
-    required this.onCamera,
-    required this.onGallery,
-  });
+  Widget _action(IconData icon, String text, Color color, VoidCallback onTap) => InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 5),
+            Text(text, style: Tk.body(12, w: FontWeight.w700, color: color)),
+          ]),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        ClipRRect(
-          borderRadius: trailCut,
-          child: Container(
-            height: 200,
-            width: double.infinity,
-            color: Theme.of(context).colorScheme.secondaryContainer,
-            child: imagePath == null
-                ? const Icon(Icons.pets, size: 64)
-                : Image.file(File(imagePath!), fit: BoxFit.cover),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 12,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              onPressed: onCamera,
-              icon: const Icon(Icons.photo_camera),
-              label: const Text('Cámara'),
-            ),
-            OutlinedButton.icon(
-              onPressed: onGallery,
-              icon: const Icon(Icons.photo_library),
-              label: const Text('Galería'),
-            ),
-          ],
-        ),
-      ],
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text('Foto', style: Tk.label()),
+        Text('Opcional', style: Tk.body(10, w: FontWeight.w600, color: Tk.ink)),
+      ]),
+      const SizedBox(height: 10),
+      Container(
+        width: double.infinity,
+        height: 190,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(color: Tk.card, borderRadius: BorderRadius.circular(Tk.radius)),
+        child: path != null
+            ? Image.file(File(path!), fit: BoxFit.cover)
+            : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.pets, size: 30, color: Tk.rust),
+                const SizedBox(height: 12),
+                Text('Captura una instantánea del\nexplorador en acción', textAlign: TextAlign.center, style: Tk.body(12, height: 1.4)),
+                const SizedBox(height: 10),
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  _action(Icons.photo_camera_outlined, 'Tomar foto', Tk.rust, onCamera),
+                  _action(Icons.photo_library_outlined, 'Galería', Tk.green, onGallery),
+                ]),
+              ]),
+      ),
+      if (path != null)
+        Row(children: [
+          _action(Icons.photo_camera_outlined, 'Cambiar foto', Tk.rust, onCamera),
+          _action(Icons.photo_library_outlined, 'Galería', Tk.green, onGallery),
+        ]),
+    ]);
   }
+}
+
+class _XpEstimate extends StatelessWidget {
+  final int xp;
+  final int streak;
+  const _XpEstimate({required this.xp, required this.streak});
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('XP estimado', style: Tk.body(10, w: FontWeight.w600, color: Tk.green)),
+            const SizedBox(height: 4),
+            Text('Estimado: +$xp XP', style: Tk.display(24, color: Tk.rust)),
+            const SizedBox(height: 4),
+            Text(
+              streak > 0 ? 'El XP final se sincronizará con la racha activa de $streak ${streak == 1 ? 'día' : 'días'}.' : 'El XP final se calcula en el servidor al guardar.',
+              style: Tk.body(12, height: 1.4),
+            ),
+          ]),
+        ),
+        const SizedBox(width: 16),
+        Container(
+          width: 64,
+          height: 64,
+          decoration: const BoxDecoration(
+            color: Tk.rust,
+            borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(6), topRight: Radius.circular(22), bottomLeft: Radius.circular(22), bottomRight: Radius.circular(6)),
+          ),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.military_tech_outlined, color: Tk.blush, size: 20),
+            Text('+$xp', style: Tk.body(11, w: FontWeight.w700, color: Tk.blush)),
+            Text('Ruta', style: Tk.body(9, color: Tk.blush)),
+          ]),
+        ),
+      ]);
+}
+
+class _GpsNote extends StatelessWidget {
+  const _GpsNote();
+
+  @override
+  Widget build(BuildContext context) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: const BoxDecoration(color: Tk.card, shape: BoxShape.circle),
+          child: const Icon(Icons.satellite_alt, size: 18, color: Tk.green),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Ubicación GPS (opcional)', style: Tk.body(12, w: FontWeight.w700, color: Tk.ink)),
+            Text('La bitácora se guardará sin contratiempos aun si caminan fuera de cobertura o sin conexión de datos.',
+                style: Tk.body(12, height: 1.4)),
+          ]),
+        ),
+      ]);
 }

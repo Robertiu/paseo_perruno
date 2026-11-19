@@ -44,3 +44,13 @@ flutter:
     - family: Fredoka
       fonts:
         - asset: assets/fonts/Fredoka.ttf
+    - family: WorkSans
+      fonts:
+        - asset: assets/fonts/WorkSans.ttf
+          weight: 400
+        - asset: assets/fonts/WorkSans.ttf
+          weight: 500
+        - asset: assets/fonts/WorkSans.ttf
+          weight: 600
+        - asset: assets/fonts/WorkSans.ttf
+          weight: 700
