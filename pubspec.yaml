@@ -30,6 +30,7 @@ dependencies:
   # Utilidades
   intl: ^0.19.0
 
+  material_ui: any
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -37,3 +38,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  fonts:
+    - family: Fredoka
+      fonts:
+        - asset: assets/fonts/Fredoka.ttf

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../app_services.dart';
 import '../../core/exceptions.dart';
@@ -37,14 +37,14 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
 
   void _showError(Object e) {
     final msg = e is AppException ? e.message : 'Ocurrió un error inesperado.';
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _pickImage(bool camera) async {
     final media = AppServices.of(context).media;
     try {
-      final path = camera ? await media.takePhoto() : await media.pickFromGallery();
+      final path =
+          camera ? await media.takePhoto() : await media.pickFromGallery();
       if (path != null && mounted) setState(() => _imagePath = path);
     } catch (e) {
       if (mounted) _showError(e);
@@ -65,8 +65,9 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
         onText: (text, isFinal) {
           if (!mounted) return;
           setState(() {
-            _notesCtrl.text =
-                [_notesBeforeDictation, text].where((s) => s.isNotEmpty).join(' ');
+            _notesCtrl.text = [_notesBeforeDictation, text]
+                .where((s) => s.isNotEmpty)
+                .join(' ');
             if (isFinal) _listening = false;
           });
         },
@@ -140,7 +141,8 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
                 labelText: 'Nombre del perro',
                 border: OutlineInputBorder(),
               ),
-              validator: (v) => (v == null || v.trim().isEmpty) ? 'Escribe el nombre' : null,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Escribe el nombre' : null,
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -176,7 +178,9 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
               onPressed: _saving ? null : _save,
               icon: _saving
                   ? const SizedBox(
-                      width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.save),
               label: Text(_saving ? 'Guardando…' : 'Guardar paseo'),
             ),

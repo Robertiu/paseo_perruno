@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
@@ -26,8 +26,12 @@ class WalkDetailScreen extends StatelessWidget {
         title: const Text('Eliminar paseo'),
         content: Text('¿Eliminar el paseo de ${entry.dogName}?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Eliminar')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Eliminar')),
         ],
       ),
     );
@@ -51,14 +55,16 @@ class WalkDetailScreen extends StatelessWidget {
           .openInMaps(entry.latitude!, entry.longitude!);
     } catch (e) {
       messenger.showSnackBar(SnackBar(
-        content: Text(e is AppException ? e.message : 'No se pudo abrir Google Maps.'),
+        content: Text(
+            e is AppException ? e.message : 'No se pudo abrir Google Maps.'),
       ));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final date = DateFormat("EEEE d 'de' MMMM y, HH:mm", 'es').format(entry.createdAt);
+    final date =
+        DateFormat("EEEE d 'de' MMMM y, HH:mm", 'es').format(entry.createdAt);
     return Scaffold(
       appBar: AppBar(
         title: Text(entry.dogName),
@@ -127,7 +133,8 @@ class _WalkMap extends StatelessWidget {
                 point: point,
                 width: 40,
                 height: 40,
-                child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+                child:
+                    const Icon(Icons.location_on, color: Colors.red, size: 40),
               ),
             ]),
           ],

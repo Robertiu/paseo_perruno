@@ -26,6 +26,7 @@ class PaseoPerrunoApp extends StatelessWidget {
       theme: ThemeData(
         colorSchemeSeed: const Color(0xFFE08A1E),
         useMaterial3: true,
+        fontFamily: 'Fredoka',
       ),
       initialRoute: AppRoutes.list,
       onGenerateRoute: _onGenerateRoute,

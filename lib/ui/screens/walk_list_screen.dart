@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 
 import '../../app_services.dart';
@@ -25,7 +25,10 @@ class _WalkListScreenState extends State<WalkListScreen> {
   }
 
   void _reload() {
-    setState(() => _future = AppServices.of(context).walks.getAll());
+    final future = AppServices.of(context).walks.getAll();
+    setState(() {
+      _future = future;
+    });
   }
 
   Future<void> _openForm() async {
@@ -34,7 +37,8 @@ class _WalkListScreenState extends State<WalkListScreen> {
   }
 
   Future<void> _openDetail(WalkEntry entry) async {
-    final changed = await Navigator.pushNamed(context, AppRoutes.detail, arguments: entry);
+    final changed =
+        await Navigator.pushNamed(context, AppRoutes.detail, arguments: entry);
     if (changed == true) _reload();
   }
 
@@ -63,7 +67,8 @@ class _WalkListScreenState extends State<WalkListScreen> {
                   children: [
                     Text('${snapshot.error}', textAlign: TextAlign.center),
                     const SizedBox(height: 12),
-                    FilledButton(onPressed: _reload, child: const Text('Reintentar')),
+                    FilledButton(
+                        onPressed: _reload, child: const Text('Reintentar')),
                   ],
                 ),
               ),
@@ -71,12 +76,14 @@ class _WalkListScreenState extends State<WalkListScreen> {
           }
           final walks = snapshot.data ?? [];
           if (walks.isEmpty) {
-            return const Center(child: Text('Aún no hay paseos. ¡Registra el primero!'));
+            return const Center(
+                child: Text('Aún no hay paseos. ¡Registra el primero!'));
           }
           return ListView.builder(
             padding: const EdgeInsets.only(bottom: 88),
             itemCount: walks.length,
-            itemBuilder: (_, i) => _WalkTile(entry: walks[i], onTap: () => _openDetail(walks[i])),
+            itemBuilder: (_, i) =>
+                _WalkTile(entry: walks[i], onTap: () => _openDetail(walks[i])),
           );
         },
       ),
@@ -93,16 +100,30 @@ class _WalkTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final date = DateFormat('d MMM y, HH:mm', 'es').format(entry.createdAt);
-    return ListTile(
+    final text = Theme.of(context).textTheme;
+    // Solo imagen y texto: sin tarjeta, sin bordes ni esquinas redondeadas.
+    return InkWell(
       onTap: onTap,
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: WalkImage(entry: entry, width: 56, height: 56),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            WalkImage(entry: entry, width: double.infinity, height: 220),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(entry.dogName, style: text.titleLarge),
+                  Text('$date · ${entry.durationMinutes} min',
+                      style: text.bodyMedium),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
-      title: Text(entry.dogName),
-      subtitle: Text('$date · ${entry.durationMinutes} min',
-          maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: entry.hasLocation ? const Icon(Icons.place_outlined) : null,
     );
   }
 }
