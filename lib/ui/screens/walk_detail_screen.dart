@@ -5,8 +5,10 @@ import 'package:latlong2/latlong.dart';
 
 import '../../app_services.dart';
 import '../../core/exceptions.dart';
+import '../../core/routes.dart';
 import '../../domain/models/walk_entry.dart';
 import '../widgets/walk_image.dart';
+import '../trail_theme.dart';
 
 /// Detalle del paseo: foto (Hero), notas y mapa interactivo con botón
 /// para abrir Google Maps.
@@ -41,10 +43,20 @@ class WalkDetailScreen extends StatelessWidget {
       await repo.delete(entry.id!);
       navigator.pop(true);
     } catch (e) {
+      if (e is AuthException && context.mounted) {
+        navigator.pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
+        return;
+      }
       messenger.showSnackBar(SnackBar(
         content: Text(e is AppException ? e.message : 'No se pudo eliminar.'),
       ));
     }
+  }
+
+  Future<void> _edit(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    final saved = await navigator.pushNamed(AppRoutes.form, arguments: entry);
+    if (saved == true) navigator.pop(true);
   }
 
   Future<void> _openMaps(BuildContext context) async {
@@ -70,6 +82,11 @@ class WalkDetailScreen extends StatelessWidget {
         title: Text(entry.dogName),
         actions: [
           IconButton(
+            tooltip: 'Editar',
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: () => _edit(context),
+          ),
+          IconButton(
             tooltip: 'Eliminar',
             icon: const Icon(Icons.delete_outline),
             onPressed: () => _delete(context),
@@ -86,11 +103,17 @@ class WalkDetailScreen extends StatelessWidget {
               children: [
                 Text(date, style: Theme.of(context).textTheme.labelLarge),
                 const SizedBox(height: 4),
-                Text('${entry.durationMinutes} minutos de paseo'),
+                Text(
+                    '${entry.durationMinutes} minutos de paseo · +${entry.xp} XP'),
                 const SizedBox(height: 16),
+                const Text('Notas del paseo'),
+                const Divider(),
                 Text(entry.notes.isEmpty ? 'Sin notas.' : entry.notes),
                 const SizedBox(height: 24),
                 if (entry.hasLocation) ...[
+                  Text('Ubicación',
+                      style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 8),
                   _WalkMap(entry: entry),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
@@ -118,7 +141,7 @@ class _WalkMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final point = LatLng(entry.latitude!, entry.longitude!);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: trailCut,
       child: SizedBox(
         height: 220,
         child: FlutterMap(

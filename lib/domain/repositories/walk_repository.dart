@@ -1,11 +1,17 @@
+import '../models/game.dart';
 import '../models/walk_entry.dart';
 
-/// Contrato de acceso a los paseos (DIP): la UI depende de esta
-/// abstracción, no de SQLite. Cambiar de motor de almacenamiento solo
-/// requiere otra implementación.
-abstract class WalkRepository {
+/// Resultado de guardar un paseo: el registro creado y lo que ganó el usuario.
+class SavedWalk {
+  final WalkEntry entry;
+  final Reward reward;
+  const SavedWalk(this.entry, this.reward);
+}
+
+/// Contrato de acceso a paseos (CRUD). La UI depende de esta abstracción.
+abstract interface class WalkRepository {
   Future<List<WalkEntry>> getAll();
-  Future<WalkEntry?> getById(int id);
-  Future<WalkEntry> insert(WalkEntry entry);
-  Future<void> delete(int id);
+  Future<SavedWalk> insert(WalkEntry entry);
+  Future<WalkEntry> update(WalkEntry entry);
+  Future<void> delete(String id);
 }

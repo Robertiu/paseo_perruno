@@ -4,11 +4,17 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../app_services.dart';
 import '../../core/exceptions.dart';
+import '../../core/routes.dart';
+import '../trail_theme.dart';
 import '../../domain/models/walk_entry.dart';
+import '../widgets/reward_dialog.dart';
 
 /// Formulario de nuevo paseo: foto (cámara/galería), dictado y GPS al guardar.
 class WalkFormScreen extends StatefulWidget {
-  const WalkFormScreen({super.key});
+  /// Si no es nulo, el formulario edita ese paseo (nombre, duración y notas).
+  final WalkEntry? existing;
+
+  const WalkFormScreen({super.key, this.existing});
 
   @override
   State<WalkFormScreen> createState() => _WalkFormScreenState();
@@ -16,9 +22,12 @@ class WalkFormScreen extends StatefulWidget {
 
 class _WalkFormScreenState extends State<WalkFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _dogCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
-  final _durationCtrl = TextEditingController(text: '30');
+  late final _dogCtrl = TextEditingController(text: widget.existing?.dogName);
+  late final _notesCtrl = TextEditingController(text: widget.existing?.notes);
+  late final _durationCtrl =
+      TextEditingController(text: '${widget.existing?.durationMinutes ?? 30}');
+
+  bool get _editing => widget.existing != null;
 
   String? _imagePath;
   bool _listening = false;
@@ -36,6 +45,10 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
   }
 
   void _showError(Object e) {
+    if (e is AuthException) {
+      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.login, (_) => false);
+      return;
+    }
     final msg = e is AppException ? e.message : 'Ocurrió un error inesperado.';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
@@ -87,8 +100,26 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
     final services = AppServices.of(context);
     setState(() => _saving = true);
+
+    if (_editing) {
+      try {
+        await services.walks.update(widget.existing!.copyWith(
+          dogName: _dogCtrl.text.trim(),
+          notes: _notesCtrl.text.trim(),
+          durationMinutes: int.parse(_durationCtrl.text),
+        ));
+        if (mounted) Navigator.pop(context, true);
+      } catch (e) {
+        if (mounted) {
+          setState(() => _saving = false);
+          _showError(e);
+        }
+      }
+      return;
+    }
 
     try {
       // La ubicación es opcional: si falla, el paseo se guarda sin coordenadas.
@@ -101,7 +132,7 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
         if (mounted) _showError(e);
       }
 
-      await services.walks.insert(WalkEntry(
+      final saved = await services.walks.insert(WalkEntry(
         dogName: _dogCtrl.text.trim(),
         notes: _notesCtrl.text.trim(),
         durationMinutes: int.parse(_durationCtrl.text),
@@ -110,6 +141,8 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
         latitude: lat,
         longitude: lng,
       ));
+      if (!mounted) return;
+      await showRewardDialog(context, saved.reward);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -122,24 +155,26 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Nuevo paseo')),
+      appBar: AppBar(title: Text(_editing ? 'Editar paseo' : 'Nuevo paseo')),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _PhotoPicker(
-              imagePath: _imagePath,
-              onCamera: () => _pickImage(true),
-              onGallery: () => _pickImage(false),
-            ),
-            const SizedBox(height: 16),
+            if (!_editing) ...[
+              _PhotoPicker(
+                imagePath: _imagePath,
+                onCamera: () => _pickImage(true),
+                onGallery: () => _pickImage(false),
+              ),
+              const SizedBox(height: 16),
+            ],
             TextFormField(
               controller: _dogCtrl,
               textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(
                 labelText: 'Nombre del perro',
-                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.pets),
               ),
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Escribe el nombre' : null,
@@ -150,7 +185,7 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 labelText: 'Duración (minutos)',
-                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.timer_outlined),
               ),
               validator: (v) {
                 final n = int.tryParse(v ?? '');
@@ -164,7 +199,6 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
               decoration: InputDecoration(
                 labelText: 'Notas del paseo',
                 alignLabelWithHint: true,
-                border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
                   tooltip: _listening ? 'Detener dictado' : 'Dictar',
                   color: _listening ? Colors.red : null,
@@ -173,6 +207,28 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
                 ),
               ),
             ),
+            if (!_editing) ...[
+              const SizedBox(height: 18),
+              ListenableBuilder(
+                listenable: Listenable.merge([_durationCtrl, _notesCtrl]),
+                builder: (context, _) {
+                  final minutes = int.tryParse(_durationCtrl.text);
+                  if (minutes == null || minutes < 1) {
+                    return const SizedBox.shrink();
+                  }
+                  final xp = 10 +
+                      minutes.clamp(1, 120) +
+                      (_imagePath == null ? 0 : 5) +
+                      (_notesCtrl.text.trim().isEmpty ? 0 : 5);
+                  return Text(
+                      '+$xp XP base. GPS, racha y reto pueden sumar más.',
+                      style: Theme.of(context).textTheme.bodyMedium);
+                },
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                  'Al guardar, se intenta añadir tu ubicación. Es opcional.'),
+            ],
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _saving ? null : _save,
@@ -182,7 +238,9 @@ class _WalkFormScreenState extends State<WalkFormScreen> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.save),
-              label: Text(_saving ? 'Guardando…' : 'Guardar paseo'),
+              label: Text(_saving
+                  ? 'Guardando…'
+                  : (_editing ? 'Guardar cambios' : 'Guardar paseo')),
             ),
           ],
         ),
@@ -207,7 +265,7 @@ class _PhotoPicker extends StatelessWidget {
     return Column(
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: trailCut,
           child: Container(
             height: 200,
             width: double.infinity,
@@ -218,15 +276,16 @@ class _PhotoPicker extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 12,
+          runSpacing: 8,
           children: [
             OutlinedButton.icon(
               onPressed: onCamera,
               icon: const Icon(Icons.photo_camera),
               label: const Text('Cámara'),
             ),
-            const SizedBox(width: 12),
             OutlinedButton.icon(
               onPressed: onGallery,
               icon: const Icon(Icons.photo_library),

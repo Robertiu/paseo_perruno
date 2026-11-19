@@ -27,3 +27,7 @@ class MediaException extends AppException {
 class SpeechException extends AppException {
   const SpeechException(super.message, [super.cause]);
 }
+
+class AuthException extends AppException {
+  const AuthException(super.message, [super.cause]);
+}

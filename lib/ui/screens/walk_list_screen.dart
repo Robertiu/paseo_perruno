@@ -2,9 +2,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 
 import '../../app_services.dart';
+import '../../core/exceptions.dart';
 import '../../core/routes.dart';
 import '../../domain/models/walk_entry.dart';
-import '../widgets/app_drawer.dart';
+import '../../domain/models/game.dart';
+import '../trail_theme.dart';
+import '../widgets/trail_progress.dart';
+import '../widgets/trail_app_bar.dart';
+import '../widgets/trail_navigation.dart';
 import '../widgets/walk_image.dart';
 
 /// Vista de lista: carga los paseos con [FutureBuilder].
@@ -17,41 +22,51 @@ class WalkListScreen extends StatefulWidget {
 
 class _WalkListScreenState extends State<WalkListScreen> {
   Future<List<WalkEntry>>? _future;
+  Future<Profile?>? _profile;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _future ??= AppServices.of(context).walks.getAll();
+    final services = AppServices.of(context);
+    _future ??= services.walks.getAll();
+    _profile ??= _loadProfile(services);
   }
 
-  void _reload() {
-    final future = AppServices.of(context).walks.getAll();
+  Future<Profile?> _loadProfile(AppServices services) async {
+    try {
+      return await services.game.profile();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _reload() async {
+    final services = AppServices.of(context);
+    final future = services.walks.getAll();
     setState(() {
       _future = future;
+      _profile = _loadProfile(services);
     });
+    await future.then((_) {}, onError: (_) {});
   }
 
   Future<void> _openForm() async {
     final saved = await Navigator.pushNamed(context, AppRoutes.form);
-    if (saved == true) _reload();
+    if (mounted && saved == true) _reload();
   }
 
   Future<void> _openDetail(WalkEntry entry) async {
     final changed =
         await Navigator.pushNamed(context, AppRoutes.detail, arguments: entry);
-    if (changed == true) _reload();
+    if (mounted && changed == true) _reload();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Mis paseos')),
-      drawer: const AppDrawer(currentRoute: AppRoutes.list),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openForm,
-        icon: const Icon(Icons.add),
-        label: const Text('Nuevo paseo'),
-      ),
+      appBar: TrailAppBar(title: 'Paseo Perruno', profile: _profile),
+      bottomNavigationBar:
+          TrailNavigation(route: AppRoutes.list, onNewWalk: _openForm),
       body: FutureBuilder<List<WalkEntry>>(
         future: _future,
         builder: (context, snapshot) {
@@ -59,6 +74,14 @@ class _WalkListScreenState extends State<WalkListScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
+            if (snapshot.error is AuthException) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+                  Navigator.pushNamedAndRemoveUntil(
+                      context, AppRoutes.login, (_) => false);
+                }
+              });
+            }
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -75,15 +98,53 @@ class _WalkListScreenState extends State<WalkListScreen> {
             );
           }
           final walks = snapshot.data ?? [];
-          if (walks.isEmpty) {
-            return const Center(
-                child: Text('Aún no hay paseos. ¡Registra el primero!'));
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.only(bottom: 88),
-            itemCount: walks.length,
-            itemBuilder: (_, i) =>
-                _WalkTile(entry: walks[i], onTap: () => _openDetail(walks[i])),
+          final theme = Theme.of(context);
+          return RefreshIndicator(
+            onRefresh: _reload,
+            child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+              itemCount: walks.isEmpty ? 2 : walks.length + 1,
+              itemBuilder: (_, i) {
+                if (i == 0) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Mis paseos', style: theme.textTheme.displaySmall),
+                      const SizedBox(height: 16),
+                      FutureBuilder<Profile?>(
+                        future: _profile,
+                        builder: (_, snapshot) {
+                          final profile = snapshot.data;
+                          if (profile == null) return const SizedBox.shrink();
+                          return Column(children: [
+                            DailyTrail(challenge: profile.challenge),
+                            const SizedBox(height: 20),
+                          ]);
+                        },
+                      ),
+                    ],
+                  );
+                }
+                if (walks.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 32),
+                    child: Column(
+                      children: [
+                        Icon(Icons.pets,
+                            size: 54, color: theme.colorScheme.tertiary),
+                        const SizedBox(height: 12),
+                        Text('Aún no hay paseos. ¡Registra el primero!',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyLarge),
+                      ],
+                    ),
+                  );
+                }
+                final walk = walks[i - 1];
+                return _WalkTile(entry: walk, onTap: () => _openDetail(walk));
+              },
+            ),
           );
         },
       ),
@@ -101,26 +162,29 @@ class _WalkTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final date = DateFormat('d MMM y, HH:mm', 'es').format(entry.createdAt);
     final text = Theme.of(context).textTheme;
-    // Solo imagen y texto: sin tarjeta, sin bordes ni esquinas redondeadas.
+    final color = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 20),
+        padding: const EdgeInsets.only(bottom: 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            WalkImage(entry: entry, width: double.infinity, height: 220),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(entry.dogName, style: text.titleLarge),
-                  Text('$date · ${entry.durationMinutes} min',
-                      style: text.bodyMedium),
-                ],
-              ),
+            ClipRRect(
+              borderRadius: trailCut,
+              child:
+                  WalkImage(entry: entry, width: double.infinity, height: 184),
             ),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: Text(entry.dogName, style: text.headlineSmall)),
+              Text('+${entry.xp} XP',
+                  style: text.labelLarge?.copyWith(color: color.primary)),
+              const Icon(Icons.chevron_right),
+            ]),
+            Text('$date · ${entry.durationMinutes} min',
+                style: text.bodyMedium),
+            const Divider(height: 24),
           ],
         ),
       ),

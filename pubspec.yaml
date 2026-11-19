@@ -1,5 +1,5 @@
 name: paseo_perruno
-description: Diario de paseos de perros con foto, dictado por voz y ubicación GPS.
+description: Diario gamificado de paseos de perros (Redis en la nube) con foto, dictado por voz y GPS.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -10,8 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Almacenamiento local
-  sqflite: ^2.4.1
+  # Base de datos NoSQL en la nube (Redis) vía la API del backend
+  http: ^1.2.2
+  shared_preferences: ^2.3.3
   path: ^1.9.0
   path_provider: ^2.1.5
 
