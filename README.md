@@ -53,6 +53,7 @@ cp .env.example .env        # pega REDIS_URL
 npm run seed                # datos iniciales (npm run seed:reset borra paseo:* antes)
 npm start                   # http://localhost:3000
 npm test                    # reglas del juego
+npm run clientes           # lista las conexiones abiertas a Redis
 ```
 El seed crea siete paseadores (Ana, Beto, Carla, Diego, Elena, Fer, Gabo) con paseos, rachas e insignias.
 

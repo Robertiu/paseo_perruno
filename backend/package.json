@@ -8,7 +8,8 @@
     "start": "node src/server.js",
     "seed": "node scripts/seed.js",
     "seed:reset": "node scripts/seed.js --reset",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "clientes": "node scripts/clients.js"
   },
   "engines": {
     "node": ">=20"
